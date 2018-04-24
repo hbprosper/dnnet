@@ -14,7 +14,7 @@ DEBUG = False
 
 USAGE = '''
 Usage:
-  netpickle.py <bnn-log-file-name>.bin
+  netpickle.py <bnn-log-file-name>.bin [output file-name]
 '''
 #------------------------------------------------------------------------------
 def usage():
@@ -56,8 +56,12 @@ def main():
     netname  = os.path.splitext(inputs[0])[0] # Name of network
     nnlogfile= netname + ".bin"               # Name of (binary) log file
     nnvarfile= netname + ".var"               # Name of variables file
-    nnpklfile= netname + ".pkl"               # Name of pickle file
 
+    if len(inputs) > 1:
+        nnpklfile = inputs[1]
+    else:
+        nnpklfile= netname + ".pkl"           # Name of pickle file
+    
     # Make sure bnn-logfile and bnn-varfile exist
     if not os.path.exists(nnlogfile): quit("File %s not found" % nnlogfile)
     if not os.path.exists(nnlogfile): quit("File %s not found" % nnvarfile)
@@ -109,16 +113,17 @@ def main():
     #---------------------------------------------------        
     net = os.popen("model-spec %s" % nnlogfile).read()
     print
+    print "extract network parameters and write to a pickle file"
     if find(net, "real") > -1:
         model = "real"
-        print "Model type: regressor"
+        print "  model type: regressor"
     else:
         model = "binary"
-        print "Model type: classifier"
-    print "Number of networks:     %6d" % numberNetworks
-    print "Number of inputs:       %6d" % ninputs
-    print "Number of nodes/layer:  %s"  % nhidden
-    print "Number of parameters:   %6d" % numberParams
+        print "  model type: classifier"
+    print "  number of networks:     %6d" % numberNetworks
+    print "  number of inputs:       %6d" % ninputs
+    print "  number of nodes/layer:  %s"  % nhidden
+    print "  number of parameters:   %6d" % numberParams
 
     #---------------------------------------------------
     # Call net-display for each index
@@ -216,9 +221,9 @@ def main():
     scaler = Scaler(name, mean, scale)
     t = (network, scaler)
 
-    print "saving to file: %s" % nnpklfile
+    print "  saving to file: %s" % nnpklfile
     pc.dump(t, open(nnpklfile, 'wb'), pc.HIGHEST_PROTOCOL)
-    print "done!"
+    print
 #------------------------------------------------------------------------------
 main()
 

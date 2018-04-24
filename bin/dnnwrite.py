@@ -4,6 +4,7 @@
 # Purpose: Write a mlp-function created by sklearn or fbm
 # Created: 03-Mar-2018 Harrison B. Prosper
 #          21-Apr-2018 HBP adapt for fbm
+#          24-Apr-2018 HBP fix Python interface
 #------------------------------------------------------------------------------
 import os, sys, re, optparse
 import pickle as pc
@@ -174,30 +175,35 @@ SOURCE='''// -------------------------------------------------------------------
 %(rtype)s %(basename)s::operator()(PyObject* o)
 {
   std::vector<double> inputs(ninputs, 0);
-  if ( PyList_Check(o) )
+  PyObject* item;
+  if ( PySequence_Check(o) )
     {
-      for(long c=0; c < PyList_Size(o); c++)
-        inputs[c] = PyFloat_AsDouble(PyList_GetItem(o, c));
+      int n = PySequence_Length(o);
+      if (n != ninputs)
+        {
+          std::cout << "%(basename)s - sequence argument has wrong length: "
+                    << n << std::endl;
+          exit(0);
+        }
+      for(int c=0; c < n; c++)
+        { 
+          // assume we have floats
+          item = PySequence_GetItem(o, c); // we now own item
+          inputs[c] = PyFloat_AsDouble(item);
+          Py_DECREF(item); // decrement ownership (reference) count
+        }
     }
-  else if ( PyTuple_Check(o) ) 
-    {
-      for(long c=0; c < PyTuple_Size(o); c++)
-        inputs[c] = PyFloat_AsDouble(PyTuple_GetItem(o, c));
-   }
   else
-   {
-     std::cout << "%(basename)s: argument must be either a list or a tuple" 
-               << std::endl;
-     exit(0);
-   }
-
+    {
+      std::cout << "%(basename)s - argument must be either a list or a tuple" 
+                << std::endl;
+      exit(0);
+    }
   return (*this)(inputs);    
 }
 #endif
-
 %(softmaximpl)s
 %(selectimpl)s
-
 void %(basename)s::compute(int netid)
 {
   NetWeights& nw = nn[netid];
@@ -510,7 +516,7 @@ def writeLinkdefAndMakefile(names, extranames=[]):
 ''' % rec
     
     outfilename = '%(dnndir)s/include/linkdef.h' % names
-    print '==> creating file: %s' % outfilename    
+    print '\t=> creating file: %s' % outfilename    
     open(outfilename, 'w').write(record)
 
     # --------------------------------------------------------------------------
@@ -606,7 +612,7 @@ clean:
 ''' % names
     
     outfilename = '%(dnndir)s/Makefile' % names
-    print '==> creating file: %s' % outfilename    
+    print '\t=> creating file: %s' % outfilename    
     open(outfilename, 'w').write(record)    
 #------------------------------------------------------------------------------    
 def main():
@@ -651,15 +657,17 @@ def main():
     else:
 
         # FBM
+
+        # check for net-display
+        answer = os.popen('which net-display').read()
+        if answer == '':
+            quit('please execute setup.sh to gain access to FBM programs')
         
         # first convert to a pickle file
-        cmd = 'netpickle.py %s' % dnnfilename
+        cmd = 'netpickle.py %s .bnn.pkl' % dnnfilename
         os.system(cmd)
 
         # extract MLP information from file
-        dnnfilename = '%s.pkl' % split(dnnfilename, '.')[0]
-        cmd = 'mv %s .bnn.pkl' % dnnfilename
-        os.system(cmd)
         mlpinfo = MLPinfo('.bnn.pkl', package)
         
         t = split(package, ',')
@@ -695,15 +703,16 @@ def main():
             
     # -------------------------------------------------------------------------
     # WRITE C++ SOURCE
+    print 'create C++ source and header files'    
     cppfilename = '%(dnndir)s/src/%(basename)s.cc' % names
-    print '==> creating file: %s' % cppfilename
+    print '\t=> creating file: %s' % cppfilename
     names['cppsrc'] = cppsrc    
     source = SOURCE % names
     open(cppfilename, 'w').write(source)
 
     # WRITE C++ HEADER
     hdrfilename = '%(dnndir)s/include/%(basename)s.h' % names
-    print '==> creating file: %s' % hdrfilename
+    print '\t=> creating file: %s' % hdrfilename
     header = HEADER % names
     open(hdrfilename, 'w').write(header)
 
