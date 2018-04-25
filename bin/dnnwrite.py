@@ -62,19 +62,13 @@ struct %(basename)s
   {
     NetWeights() {}
 
-    NetWeights(std::vector<double>& mean_,
-               std::vector<double>& scale_,
-               std::vector<Layer>&  weights_)
-     : mean(mean_),
-       scale(scale_),
-       weights(weights_),
+    NetWeights(std::vector<Layer>&  weights_)
+     : weights(weights_),
        outputs(std::vector<double>(%(maxwidth)s)),
        I(std::vector<double>(%(maxwidth)s)) {}
 
     ~NetWeights() {}
 
-    std::vector<double> mean;
-    std::vector<double> scale;
     std::vector<Layer>  weights;
     std::vector<double> outputs;
     std::vector<double> I;
@@ -83,20 +77,25 @@ struct %(basename)s
   %(basename)s();
   ~%(basename)s();
   %(rtype)s operator()(std::vector<double>& inputs);
+
 #ifdef WITH_PYTHON
   %(rtype)s operator()(PyObject* o);
 #endif
+
   void compute(int netid=0);
 %(softmaxdef)s
 %(selectdef)s
   int ninputs;
   int noutputs;
   int maxwidth;
-
-  std::vector<NetWeights> nn;
-
   int first;
   int last;
+
+  std::vector<double> mean;
+  std::vector<double> scale;
+  std::vector<double> I;
+  std::vector<NetWeights> nn;
+  std::vector<double> p;
 };
 #endif
 '''
@@ -112,7 +111,7 @@ void %(basename)s::softmax(int netid)
   double softsum = 0;
   for(size_t c=0; c < nw.outputs.size(); c++)
     {
-      softsum   += nw.I[c];
+      softsum += nw.I[c];
       nw.outputs[c] = nw.I[c];
     }
   for(size_t c=0; c < nw.outputs.size(); c++) nw.outputs[c] /= softsum;	
@@ -147,9 +146,13 @@ SOURCE='''// -------------------------------------------------------------------
   : ninputs(%(ninputs)d),
     noutputs(%(noutputs)d),
     maxwidth(%(maxwidth)d),
-    nn(std::vector<NetWeights>()),
     first(0),
-    last(%(maxid)s)
+    last(%(maxid)s),
+    mean(std::vector<double>(%(ninputs)d)),
+    scale(std::vector<double>(%(ninputs)d)),
+    I(std::vector<double>(%(ninputs)d)),
+    nn(std::vector<NetWeights>()),
+    p(std::vector<double>(%(nnetworks)d))
 {
 %(cppsrc)s
 }
@@ -158,13 +161,16 @@ SOURCE='''// -------------------------------------------------------------------
 
 %(rtype)s %(basename)s::operator()(std::vector<double>& inputs)
 {
-  std::vector<double> y(noutputs, 0);
+  // standardize inputs
+  for(size_t c=0; c < mean.size(); c++) I[c] = (inputs[c] - mean[c]) / scale[c];
+  std::vector<double> y(%(noutputs)d, 0);
+  int j=0;
   for(int netid=first; netid<=last; netid++)
     {
       NetWeights& nw = nn[netid];
-      std::copy(inputs.begin(), inputs.end(), nw.I.begin());
       compute(netid);
       for(int c=0; c < noutputs; c++) y[c] += nw.outputs[c];
+      p[j] = nw.outputs[0]; j++;
     }
   int N = last - first + 1;
   for(int c=0; c < noutputs; c++) y[c] /= N;
@@ -175,7 +181,6 @@ SOURCE='''// -------------------------------------------------------------------
 %(rtype)s %(basename)s::operator()(PyObject* o)
 {
   std::vector<double> inputs(ninputs, 0);
-  PyObject* item;
   if ( PySequence_Check(o) )
     {
       int n = PySequence_Length(o);
@@ -187,10 +192,12 @@ SOURCE='''// -------------------------------------------------------------------
         }
       for(int c=0; c < n; c++)
         { 
+          PyObject* item = PySequence_GetItem(o, c);
           // assume we have floats
-          item = PySequence_GetItem(o, c); // we now own item
           inputs[c] = PyFloat_AsDouble(item);
-          Py_DECREF(item); // decrement ownership (reference) count
+          // since we own item and no longer need it,
+          // we must decrement ownership (reference) count
+          Py_DECREF(item);
         }
     }
   else
@@ -208,10 +215,6 @@ void %(basename)s::compute(int netid)
 {
   NetWeights& nw = nn[netid];
 
-  // standardize inputs
-  for(size_t c=0; c<nw.mean.size(); c++) nw.I[c] = (nw.I[c]-nw.mean[c])/nw.scale[c];
-
-  // compute network output
   for(size_t layer=0; layer < nw.weights.size(); layer++)
     {
       std::vector<double>& B = nw.weights[layer].B; // reference not a copy!
@@ -219,7 +222,10 @@ void %(basename)s::compute(int netid)
       for(size_t j=0; j < B.size(); j++)
         {
           nw.outputs[j] = B[j];
-          for(size_t i=0; i < W.size(); i++) nw.outputs[j] += nw.I[i] * W[i][j];
+          if ( layer == 0 )
+            for(size_t i=0; i < W.size(); i++) nw.outputs[j] += I[i] * W[i][j];
+          else
+            for(size_t i=0; i < W.size(); i++) nw.outputs[j] += nw.I[i] * W[i][j];
           nw.outputs[j] = nw.weights[layer].activation(nw.outputs[j]);
         }
       for(size_t j=0; j < B.size(); j++) nw.I[j] = nw.outputs[j];
@@ -227,17 +233,15 @@ void %(basename)s::compute(int netid)
 }
 '''
 
-BUFFERS = '''
-  { // NETWORK: %(netid)s
-    std::vector<double> mean(ninputs);
-%(means)s
+BUFFERS = '''%(means)s
 
-    std::vector<double> scale(ninputs);
 %(scales)s
+
+  { // NETWORK: %(netid)s
 
     std::vector<Layer>  weights;
 %(weightimpl)s
-    nn.push_back( NetWeights(mean, scale, weights) );
+    nn.push_back( NetWeights(weights) );
   }
 '''
 
@@ -418,37 +422,43 @@ def writeCPP(names, details):
         names['output'] = 'y;'
     
     # write out C++ code
+    tab2 = ' '*2
     tab4 = ' '*4
     tab6 = ' '*6
 
-    # MEANS
-    means = []
-    rec  = tab6
-    means.append(rec)
-    for i in range(ninputs):
-        s = 'mean[%d]=%12.5e; ' % (i, mean[i])
-        if len(rec + s) < 80:
-            rec += s
-            means[-1] = rec
-        else:
-            rec = tab6 + s
-            means.append(rec)
-    names['means'] = joinfields(means, '\n')
+    if names['netid'] == 0:
+        
+        # MEANS
+        means = []
+        rec  = tab2
+        means.append(rec)
+        for i in range(ninputs):
+            s = 'mean[%d]=%12.5e; ' % (i, mean[i])
+            if len(rec + s) < 80:
+                rec += s
+                means[-1] = rec
+            else:
+                rec = tab2 + s
+                means.append(rec)
+        names['means'] = joinfields(means, '\n')
 
-    # SCALES
-    scales = []
-    rec  = tab6
-    scales.append(rec)
-    for i in range(ninputs):
-        s = 'scale[%d]=%12.5e; ' % (i, scale[i])
-        if len(rec + s) < 80:
-            rec += s
-            scales[-1] = rec
-        else:
-            rec = tab6 + s
-            scales.append(rec)
-    names['scales'] = joinfields(scales, '\n')    
-
+        # SCALES
+        scales = []
+        rec  = tab2
+        scales.append(rec)
+        for i in range(ninputs):
+            s = 'scale[%d]=%12.5e; ' % (i, scale[i])
+            if len(rec + s) < 80:
+                rec += s
+                scales[-1] = rec
+            else:
+                rec = tab2 + s
+                scales.append(rec)
+        names['scales'] = joinfields(scales, '\n')    
+    else:
+        names['means'] = ''
+        names['scales'] = ''
+        
     # BIASES & WEIGHTS
     cppsrc = ''
     for layer in range(nlayers):
