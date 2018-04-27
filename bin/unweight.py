@@ -36,21 +36,19 @@ def binsearch(L, item):
 argv = sys.argv[1:]
 argc = len(argv)
 if argc < 3:
-    print "Usage:\n\tpython unweight.py input-filename output-filename count"
-    sys.exit(0)
+    sys.exit("Usage:\n\tpython unweight.py input-filename output-filename count")
 
 inpfile = argv[0]
 outfile = argv[1]
 count   = atoi(argv[2])
 
 if not os.path.exists(inpfile):
-    print "Can't find %s" % inpfile
-    sys.exit(0)
+    sys.exit("Can't find %s" % inpfile)
 
 #------------------------------------------------------------------------------
 # Read input file
 #------------------------------------------------------------------------------
-print "Read input file: %s" % inpfile
+print "read input file: %s" % inpfile
 inprec = map(lambda x: rstrip(x), open(inpfile).readlines())
 header = inprec[0]
 inprec = inprec[1:]
@@ -67,13 +65,11 @@ for index in xrange(len(hdr)):
         break;
 
 if which < 0:
-    print "Weight field not found"
-    sys.exit(0)
+    sys.exit("\tweight field not found")
 
 #------------------------------------------------------------------------------
 # Sum weights
 #------------------------------------------------------------------------------
-print "Compute cdf of weights..."
 wcdf = len(inprec)*[0]
 t = split(inprec[0])
 w = atof(t[which])
@@ -84,31 +80,27 @@ for i in xrange(1,len(inprec)):
     wcdf[i] = wcdf[i-1] + w
 
 sumw = wcdf[-1]
-print "Weight sum: ", sumw
+print "\tweight sum: %e" % sumw
 
 #------------------------------------------------------------------------------
 # Select events according to weight
 #------------------------------------------------------------------------------
-print "Unweight events.."
 records = count * [0]
 for i in xrange(count):
     w = uniform(0, sumw)
     k = binsearch(wcdf, w)
     if k < 0:
-        print "**error** Not found ", w
-        sys.exit(0)
+        sys.exit("**error** Not found %e" % w)
     t = split(inprec[k])
     t[which] = "1.0"
-    records[i] = joinfields(t,'\t')
+    records[i] = joinfields(t,' ')
 
 #------------------------------------------------------------------------------
 # Write out shuffled records
 #------------------------------------------------------------------------------
 shuffle(records)
 records = [header] + records
-recs = map(split, records)
-format = ' %11s'*len(recs[0]) + "\n"
-records = map(lambda x: format % tuple(x), recs)
-open(outfile,"w").writelines(records)
+recs = [joinfields(x, ' ')+'\n' for x in map(split, records)]
+open(outfile,"w").writelines(recs)
 
 

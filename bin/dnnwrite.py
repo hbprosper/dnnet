@@ -77,6 +77,7 @@ struct %(basename)s
   %(basename)s();
   ~%(basename)s();
   %(rtype)s operator()(std::vector<double>& inputs);
+  %(rtype)s operator()(double* inputs);
 
 #ifdef WITH_PYTHON
   %(rtype)s operator()(PyObject* o);
@@ -175,6 +176,13 @@ SOURCE='''// -------------------------------------------------------------------
   int N = last - first + 1;
   for(int c=0; c < noutputs; c++) y[c] /= N;
   return %(output)s
+}
+
+%(rtype)s %(basename)s::operator()(double* inputs_)
+{
+  std::vector<double> inputs(%(ninputs)d);
+  for(size_t c=0; c < inputs.size(); c++) inputs[c] = inputs_[c];
+  return (*this)(inputs);
 }
 
 #ifdef WITH_PYTHON
