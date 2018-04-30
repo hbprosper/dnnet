@@ -23,8 +23,8 @@ Usage:
          -h   print this
          -m   model type (b=binary or r=real) [b]
          -N   number of training events [min(5000, all)]
-         -H h0[,h1[,h2]]   number of hidden nodes [15]
-         -I   number of iterations [250]
+         -H h0[,h1[,h2]]   number of hidden nodes [10]
+         -I   number of iterations [300]
 
 
    mktrain.py needs two input files:
@@ -40,7 +40,7 @@ Usage:
 SHORTOPTIONS = 'hm:N:H:I:'
 COUNT = 5000
 ITERATIONS = 250
-HIDDEN= 15
+HIDDEN= 10
 
 template = '''#------------------------------------------------------------------------------
 # Description: This file contains the commands to run the BNN training.
@@ -76,7 +76,7 @@ time net-mc	%(name)s.bin %(iter)s
 
 echo ""
 echo "Use"
-echo "   netwrite.py -n 100 %(name)s.bin"
+echo "   dnnwrite.py -f100 %(name)s.bin"
 echo "to create the BNN function %(name)s.cpp using the last 100 points"
 '''
 
@@ -213,7 +213,7 @@ def main():
     names['varlist'] = varlist
     names['datafile'] = trainfile
     names['time'] = ctime(time())
-    names['count']= count+1
+    names['count']= ndata+1
     names['I'] = nvar
     fmt = ' %d' * len(hidden)
     names['H'] = fmt % tuple(hidden)

@@ -48,6 +48,8 @@ class Scaler:
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
 def main():
+    global DEBUG
+    
     # Make sure we have a network log-file
     inputs = sys.argv[1:]
     if len(inputs) == 0: usage()
@@ -140,9 +142,8 @@ def main():
         #---------------------------------------------------
         # Read records
         #---------------------------------------------------
-        records = filter(lambda x: strip(x) != '',
-                             os.popen("net-display -p %s %d" % \
-                                          (nnlogfile, index)).readlines())
+        records = os.popen("net-display -p %s %d" % \
+                                          (nnlogfile, index)).readlines()
         layer = 0
         irec  = 0
         mlp   = Parameter()
@@ -153,6 +154,7 @@ def main():
             
         while irec < len(records):
             tokens = split(records[irec])
+
             try:
                 keyword = tokens[-2]
             except:
@@ -160,22 +162,28 @@ def main():
                 
             if keyword == 'Weights':
                 if DEBUG:
-                    if index == 1:
-                        print "\t\tlayer %5d" % layer
-                        print "\t\t\tweights"
+                    print "\t\tlayer %5d" % layer
+                    print "\t\t\tweights"
                     
                 ninp = nhidden[layer-1]
                 nout = nhidden[layer]
+                if DEBUG:
+                    print "\t\tninp: %d" % ninp
+                    print "\t\tnout: %d" % nout
+
+                irec += 1 # blank line
                 W = ninp * [0]
                 for i in range(ninp):
-                    irec+= 1
-                    W[i] = map(atof, split(records[irec]))
+                    recs = []
+                    while (len(recs) < nout) and (irec < len(records)):
+                        irec+= 1
+                        recs += map(atof, split(records[irec]))
+                    W[i] = recs
                     if DEBUG:
-                        if index == 1:
-                            print "\t\t  %5d %s" % (i, W[i])
+                        print "%3d %s" % (i, W[i])
                         
                 # now get biases
-                irec += 1
+                irec += 2 # skip blank line
                 tokens  = split(records[irec])
                 try:
                     keyword = tokens[-2]
@@ -185,22 +193,29 @@ def main():
                 if keyword != 'Biases':
                     quit('expected keyword Biases not found on\n%s' % records[irec])
                     
-                irec+= 1
-                B = map(atof, split(records[irec]))
+                irec+= 1 # blank line
+                recs = []
+                while (len(recs) < nout) and (irec < len(records)):
+                    irec += 1
+                    recs += map(atof, split(records[irec]))                
+                B = recs
                 if len(B) != nout:
                     quit('mismatch in bias count len(B) = %d != %d in layer %d' % \
                              (len(B), nout, layer))
                 if DEBUG:
-                    if index == 1:
-                        print "\t\t\tbiases"
-                        print "\t\t  %5s %s" % ("", B)
+                    print "\t\t\tbiases"
+                    print "%3s %s" % ("", B)
                     
                 # update weights and biases for current layer
                 mlp.coefs_.append(W)
                 mlp.intercepts_.append(B)
-                
+
+                if DEBUG:
+                    print "\t<== weight and biases cached ==>"
+                    
                 # update layer number
                 layer += 1
+                DEBUG = False
                 
             # remember to update record number
             irec += 1

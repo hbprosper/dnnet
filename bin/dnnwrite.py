@@ -6,7 +6,7 @@
 #          21-Apr-2018 HBP adapt for fbm
 #          24-Apr-2018 HBP fix Python interface
 #------------------------------------------------------------------------------
-import os, sys, re, optparse
+import os, sys, re, argparse
 import pickle as pc
 from math import *
 from string import *
@@ -281,46 +281,38 @@ def nameonly(s):
     return posixpath.splitext(posixpath.split(s)[1])[0]
 
 def decodeCommandline():
-    parser = optparse.OptionParser(usage=USAGE, version=VERSION)
-
-    parser.add_option("-n", "--netname",
-                      action="store",
-                      dest="netname",
-                      type="string",
-                      default='',
-                      help="name of neural network")
-
-    parser.add_option("-p", "--package",
-                      action="store",
-                      dest="package",
-                      type="string",
-                      default='',
-                      help="name of mlp package")
+    parser = argparse.ArgumentParser()
     
-    options, args = parser.parse_args()
-    if len(args) == 0:
-        sys.exit(USAGE)
+    parser.add_argument("filename",
+                        help="file containing trained neural network")
 
-    stripno = re.compile('^[0-9_]+')
-    dnnfilename = args[0]
-    netname = options.netname
-
-    if netname == '':
-        name = nameonly(dnnfilename)
-    else:
-        name = nameonly(netname)
+    parser.add_argument("package",
+                        help="neural network package",
+                        choices=['fbm', 'sklean'],
+                        default='fbm')
+                             
+    parser.add_argument("-n",
+                        help="number of networks to use (fbm only)",
+                        default=100)
+    
+    args = parser.parse_args()
+    
+    filename = args.filename
+    package  = args.package
+    
+    name = nameonly(filename)
+    stripno = re.compile('^[0-9_]+')    
     name = stripno.sub('', name)
     
-    package = options.package
-    
-    if package == '':
-        t = split(dnnfilename, '.')
-        if t[-1] == 'bin':
-            package = 'fbm,100'
-        else:
-            package = 'scikit-learn'
-            
-    return (name, dnnfilename, package, args[1:])
+    if package == 'fbm':
+        try:
+            nnetworks = args.n
+        except:
+            nnetworks = 100
+    else:
+        nnetworks = 1
+        
+    return (name, filename, package, nnetworks, [])
 #------------------------------------------------------------------------------
 class Parameter:
     def __init__(self, activation='tanh'):
@@ -634,7 +626,7 @@ clean:
     open(outfilename, 'w').write(record)    
 #------------------------------------------------------------------------------    
 def main():
-    name, dnnfilename, package, extranames = decodeCommandline()
+    name, dnnfilename, package, nnetworks, extranames = decodeCommandline()
 
     # make sure file(s) exist
     if not os.path.exists(dnnfilename):
@@ -653,6 +645,7 @@ def main():
     names['softmaximpl'] = ''
     names['selectdef']   = ''
     names['selectimpl']  = ''    
+    names['nnetworks']   = nnetworks
     
     os.system('mkdir -p %(dnndir)s/lib' % names)
     os.system('mkdir -p %(dnndir)s/src' % names)
@@ -668,7 +661,6 @@ def main():
         mlpinfo = MLPinfo(dnnfilename, package)
         
         names['netid'] = 0
-        names['nnetworks'] = 1
         details = mlpinfo()
         cppsrc = writeCPP(names, details)
         
@@ -687,15 +679,9 @@ def main():
 
         # extract MLP information from file
         mlpinfo = MLPinfo('.bnn.pkl', package)
-        
-        t = split(package, ',')
-        if len(t) > 1:
-            nnets = atoi(t[1])
-        else:
-            nnets = 100
 
         maxnets = len(mlpinfo.mlp)
-        nnets   = min(nnets, maxnets)
+        nnets   = min(nnetworks, maxnets)
         names['nnetworks'] = nnets
         details = mlpinfo(0)
         
@@ -716,7 +702,6 @@ def main():
             if netid % 50 == 0: print "\t%(netid)5d\t%(name)s" % names, nid
 
             details = mlpinfo(nid)
-            names['inputs'] = ''
             cppsrc += writeCPP(names, details)
             
     # -------------------------------------------------------------------------
