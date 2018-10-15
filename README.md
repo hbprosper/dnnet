@@ -1,5 +1,5 @@
 # dnnet
-A collection of simple deep neural network utilities for scikit-learn and the flexible Bayesian modeling (FBM) package by Radford Neal.
+A collection of simple deep neural network utilities for scikit-learn, the flexible Bayesian modeling (FBM) package by Radford Neal, and the TMVA package released with the CERN product ROOT.
 
 ## programs
 
@@ -11,4 +11,6 @@ mixsigbkg.py [options] net-name
 mktrain.py [options] net-name
 
 dnnwrite.py [options] filename
+
+tmva2cpp.py TMVA-C-filename [classifier-name]
 ```
